@@ -5,4 +5,4 @@ export { cron, daily } from './cron.ts';
 export { getStrPinYin } from './pinYin.ts';
 export { sha1 } from './sha1.ts';
 export { isChinese, subStrLen, superTrim, trimWenJian, ywbdZzwbd } from './string.ts';
-export { sleep } from './tool.ts';
+export { sleep } from './tool.ts';  

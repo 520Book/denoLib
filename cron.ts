@@ -1,3 +1,6 @@
+// 表达式的格式如下：
+// 秒 分  时    每月中的一天     月     每周中的一天    
+// S  M   H   (Day of month)  Month  (Day of week)
 export { cron, daily, start, stop };
 
 type JobType = () => void;
@@ -13,7 +16,6 @@ const { DAY_OF_MONTH, DAY_OF_WEEK, HOUR, MINUTE, MONTH, SECOND } = TIME_PART;
 const schedules = new Map<string, Array<JobType>>();
 let schedulerTimeIntervalID: ReturnType<typeof setInterval> = 0;
 let shouldStopRunningScheduler = false;
-
 
 const isRange = (text: string) => /^\d\d?\-\d\d?$/.test(text);
 const getTimePart = (date: Date, type: TIME_PART): number =>

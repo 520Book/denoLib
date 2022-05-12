@@ -1,4 +1,4 @@
-export { sleep }
+export { sleep, rndNum }
  
 // 睡眠，单位毫秒
 function sleep(delay = 1000) {

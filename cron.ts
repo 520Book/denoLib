@@ -1,6 +1,3 @@
-// 表达式的格式如下：
-// 秒 分  时    每月中的一天     月     每周中的一天    
-// S  M   H   (Day of month)  Month  (Day of week)
 export { cron, daily, start, stop };
 
 type JobType = () => void;

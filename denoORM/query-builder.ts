@@ -1,5 +1,4 @@
 import { query, poolConnect } from './connectors/pg-connector.ts';
-import { template } from './sql-template.ts';
 import { validate } from './validate-strings.ts';
 
 /* ----------------------------- TYPE INTERFACE ----------------------------- */
@@ -16,6 +15,7 @@ interface Info {
     where: boolean;
     condition?: any;
   };
+  limit?: number;
   returning: {
     active: boolean;
     columns: string | string[];
@@ -41,50 +41,75 @@ interface Error {
 /*                                 DORM CLASS                                 */
 /* -------------------------------------------------------------------------- */
 export class Dorm {
-  callOrder: string[];
-  error: Error;
-  info: Info;
-  template: any;
+  #callOrder: string[] = [];
+  #error: Error = {
+    id: 0,
+    message: ''
+  };
+  #info: Info = {
+    action: {
+      type: null,
+      table: null,
+      columns: '*',
+      values: [],
+      valuesParam: '',
+    },
+    join: [],
+    filter: {
+      where: false,
+      condition: null,
+    },
+    returning: {
+      active: false,
+      columns: '*',
+    },
+  };
+
   constructor(config: any) {
-    this.callOrder = [];
-
-    this.error = {
-      id: 0,
-      message: '',
-    };
-
-    this.info = {
-      action: {
-        type: null,
-        table: null,
-        columns: '*',
-        values: [],
-        valuesParam: '',
-      },
-      join: [],
-      filter: {
-        where: false,
-        condition: null,
-      },
-      returning: {
-        active: false,
-        columns: '*',
-      },
-    };
-
     poolConnect(config);
-    this.template = template.bind(this);
   }
-  /* ------------------------------ ERROR CHECKING ----------------------------- */
-  checkErrors(group: number) {
-    const errorObj = this.error;
-    const error =
-      (group === 1 && !!this.info.action.type)  ||
-      (group === 2 && !!this.info.action.table) ||
-      (group === 3 && !!this.info.filter.where) ||
-      (group === 4 && !!this.info.returning.active);
 
-    if (error) errorObj.id = group;
+  template(this: Dorm, arg: string): string {
+    return {
+      INSERT: `
+        INSERT INTO "${this.#info.action.table}" 
+        (${this.#info.action.columns}) 
+        VALUES ${this.#info.action.valuesParam}
+      `,
+      SELECT: `
+        SELECT ${this.#info.action.columns} 
+        FROM "${this.#info.action.table}"
+      `,
+      UPDATE: `
+        UPDATE "${this.#info.action.table}" 
+        SET ${this.#info.action.columns}
+      `,
+      UPDATEALL: `
+        UPDATE "${this.#info.action.table}" 
+        SET ${this.#info.action.columns}
+      `,
+      DELETE: `DELETE FROM "${this.#info.action.table}"`,
+      DELETEALL: `DELETE FROM "${this.#info.action.table}"`,
+      DROP: `DROP TABLE "${this.#info.action.table}"`,
+      JOIN: ` ${this.#info.join[0]?.type} ${this.#info.join[0]?.table}`,
+      ON: ` ON ${this.#info.join[0]?.on}`,
+      WHERE: ` WHERE ${this.#info.filter.condition}`,
+      LIMIT: ` LIMIT ${this.#info.limit}`,
+      RETURNING: ` RETURNING ${this.#info.returning.columns}`,
+    }[arg] ?? '';
+  }
+
+
+  /* ------------------------------ ERROR CHECKING ----------------------------- */
+  checkErrors(id: number) {
+    const errorObj = this.#error;
+    const error =
+      (id === 1 && !!this.#info.action.type)  ||
+      (id === 2 && !!this.#info.action.table) ||
+      (id === 3 && !!this.#info.filter.where) ||
+      (id === 4 && !!this.#info.returning.active);
+
+    if (error) errorObj.id = id;
     return error;
   }
 
@@ -107,80 +132,77 @@ export class Dorm {
       98: 'Invalid tables (cannot contain quotes)',
       99: 'Invalid columns (cannot contain quotes)',
     };
-    this.error.message = msg[this.error.id];
+    this.#error.message = msg[this.#error.id];
   }
 
   finalErrorCheck() {
-    if (this.info.action.type === 'SELECT' && this.info.returning.active) {
-      this.error.id = 9;
+    if (this.#info.action.type === 'SELECT' && this.#info.returning.active) {
+      this.#error.id = 9;
       return true;
     }
     if (
-      this.info.action.type === 'DELETE' &&
-      (!this.info.filter.where || !this.info.filter.condition)
+      this.#info.action.type === 'DELETE' &&
+      (!this.#info.filter.where || !this.#info.filter.condition)
     ) {
-      this.error.id = 10;
+      this.#error.id = 10;
       return true;
     }
-    if (this.info.action.type === 'DELETEALL' && this.info.filter.where) {
-      this.error.id = 11;
+    if (this.#info.action.type === 'DELETEALL' && this.#info.filter.where) {
+      this.#error.id = 11;
       return true;
     }
 
-    for (const el of this.info.join) {
+    for (const el of this.#info.join) {
       if (!validate.columnsTables(el.table)) {
-        this.error.id = 98;
+        this.#error.id = 98;
         return true;
       }
     }
 
-    if (!validate.columnsTables(this.info.action.table)) {
-      this.error.id = 98;
+    if (!validate.columnsTables(this.#info.action.table)) {
+      this.#error.id = 98;
       return true;
     }
 
     if (
-      !validate.columnsTables(this.info.action.columns) ||
-      !validate.columnsTables(this.info.returning.columns)
+      !validate.columnsTables(this.#info.action.columns) ||
+      !validate.columnsTables(this.#info.returning.columns)
     ) {
-      this.error.id = 99;
+      this.#error.id = 99;
       return true;
     }
 
     return false;
   }
 
+  /* ------------------------------ SELECT METHOD ----------------------------- */
+  select(arg?: string) {
+    if (this.checkErrors(1)) return this;
+    this.#info.action.type = 'SELECT';
+    if (arg) this.#info.action.columns = arg;
+    return this;
+  }
+
   /* ------------------------------ INSERT METHOD ----------------------------- */
   insert(arg: any | unknown[]) {
-    this.callOrder.push('INSERT');
-
     if (typeof arg !== 'object') {
-      this.error.id = 7;
+      this.#error.id = 7;
       return this;
     }
-
-    if (Array.isArray(arg)) {
-      if (!arg.length) {
-        this.error.id = 8;
-        return this;
-      }
+    if (Array.isArray(arg) && !arg.length) {
+      this.#error.id = 8;
+      return this;
     }
-
     if (this.checkErrors(1)) return this;
-
-    this.info.action.type = 'INSERT';
-
+    this.#info.action.type = 'INSERT';
     const columns: string[] = [];
-
     const values: unknown[] = [];
-
     if (!Array.isArray(arg)) {
       if (!Object.keys(arg).length) {
-        this.error.id = 8;
+        this.#error.id = 8;
         return this;
       }
       const [column, value] = Object.entries(arg)[0];
-
       columns.push(column);
       const val: any = [];
       if (value === undefined) {
@@ -192,7 +214,7 @@ export class Dorm {
     } else {
       arg.forEach((obj: any) => {
         if (!Object.keys(obj).length) {
-          this.error.id = 8;
+          this.#error.id = 8;
           return this;
         }
         Object.keys(obj).forEach((col) => {
@@ -201,7 +223,7 @@ export class Dorm {
       });
 
       if (!validate.columnsTables(columns)) {
-        this.error.id = 99;
+        this.#error.id = 99;
         return this;
       }
 
@@ -213,7 +235,7 @@ export class Dorm {
           } else {
             arg.forEach((obj: any) => {
               if (!Object.keys(obj).length) {
-                this.error.id = 8;
+                this.#error.id = 8;
                 return this;
               }
               Object.keys(obj).forEach((col) => {
@@ -222,7 +244,7 @@ export class Dorm {
             });
 
             if (!validate.columnsTables(columns)) {
-              this.error.id = 99;
+              this.#error.id = 99;
               return this;
             }
 
@@ -243,10 +265,10 @@ export class Dorm {
       });
     }
 
-    this.info.action.columns = columns.join(', ');
+    this.#info.action.columns = columns.join(', ');
 
     // create parameter strings
-    this.info.action.values = values.flat();
+    this.#info.action.values = values.flat();
     let paramCount = 0;
     const valuesBound = values.map((el: any) =>
       el.map((ele: any) => {
@@ -257,94 +279,63 @@ export class Dorm {
 
     valuesBound.forEach((data: any, index: number) => {
       const tail = index === valuesBound.length - 1 ? '' : ', ';
-      this.info.action.valuesParam += `(${data.join(', ')})${tail}`;
+      this.#info.action.valuesParam += `(${data.join(', ')})${tail}`;
     });
-
-    return this;
-  }
-
-  /* ------------------------------ SELECT METHOD ----------------------------- */
-  select(arg?: string) {
-    this.callOrder.push('SELECT');
-
-    if (this.checkErrors(1)) return this;
-
-    this.info.action.type = 'SELECT';
-    if (arg) this.info.action.columns = arg;
 
     return this;
   }
 
   /* ------------------------------ UPDATE METHOD ----------------------------- */
   update(obj: any) {
-    this.callOrder.push('UPDATE');
-
     if (this.checkErrors(1)) return this;
-
     if (!Object.keys(obj).length || Array.isArray(obj)) {
-      this.error.id = 8;
+      this.#error.id = 8;
       return this;
     }
-
     if (!validate.columnsTables(Object.keys(obj))) {
-      this.error.id = 99;
+      this.#error.id = 99;
       return this;
     }
 
-    this.info.action.type = 'UPDATE';
-    this.info.action.columns = '';
+    this.#info.action.type = 'UPDATE';
+    this.#info.action.columns = '';
 
     Object.keys(obj).forEach((col, index) => {
       const str = `${col} = $${index + 1}`;
-
-      this.info.action.values.push(obj[col]);
-
+      this.#info.action.values.push(obj[col]);
       const tail = index === Object.keys(obj).length - 1 ? '' : ', ';
-      this.info.action.columns += `${str + tail}`;
+      this.#info.action.columns += `${str + tail}`;
     });
     return this;
   }
 
   /* ------------------------------ DELETE METHODS ----------------------------- */
   delete(arg?: string) {
-    this.callOrder.push('DELETE');
-
     if (this.checkErrors(1)) return this;
-
-    this.info.action.type = 'DELETE';
-    if (arg) this.info.action.table = arg;
-
+    this.#info.action.type = 'DELETE';
+    if (arg) this.#info.action.table = arg;
     return this;
   }
 
   deleteAll(arg?: string) {
-    this.callOrder.push('DELETEALL');
-
     if (this.checkErrors(1)) return this;
-
-    this.info.action.type = 'DELETEALL';
-    if (arg) this.info.action.table = arg;
-
+    this.#info.action.type = 'DELETEALL';
+    if (arg) this.#info.action.table = arg;
     return this;
   }
 
   /* ------------------------------- DROP METHOD ------------------------------ */
   drop(arg?: string) {
-    this.callOrder.push('DROP');
-
     if (this.checkErrors(1)) return this;
-
-    this.info.action.type = 'DROP';
-    if (arg) this.info.action.table = arg;
+    this.#info.action.type = 'DROP';
+    if (arg) this.#info.action.table = arg;
     return this;
   }
 
   /* ------------------------------ TABLE METHOD ------------------------------ */
-  table(arg: string) {
-    this.callOrder.push('TABLE');
-
+  table(table: string) {
     if (this.checkErrors(2)) return this;
-    this.info.action.table = arg;
+    this.#info.action.table = table;
     return this;
   }
   /**
@@ -355,8 +346,7 @@ export class Dorm {
 
   /* ------------------------------ JOIN METHODS ------------------------------ */
   join(arg: string) {
-    this.callOrder.push('JOIN-INNER');
-    const joinList = this.info.join;
+    const joinList = this.#info.join;
     for (const el of joinList) {
       if (!el.type) {
         el.type = 'INNER JOIN';
@@ -369,9 +359,7 @@ export class Dorm {
   }
 
   leftJoin(arg: string) {
-    this.callOrder.push('JOIN-LEFT');
-
-    const joinList = this.info.join;
+    const joinList = this.#info.join;
     for (const el of joinList) {
       if (!el.type) {
         el.type = 'LEFT JOIN';
@@ -379,15 +367,12 @@ export class Dorm {
         return this;
       }
     }
-
     joinList.push({ type: 'LEFT JOIN', table: arg });
     return this;
   }
 
   rightJoin(arg: string) {
-    this.callOrder.push('JOIN-RIGHT');
-
-    const joinList = this.info.join;
+    const joinList = this.#info.join;
     for (const el of joinList) {
       if (!el.type) {
         el.type = 'RIGHT JOIN';
@@ -396,15 +381,11 @@ export class Dorm {
       }
     }
     joinList.push({ type: 'RIGHT JOIN', table: arg });
-
     return this;
   }
 
   fullJoin(arg: string) {
-    this.callOrder.push('JOIN-FULL');
-
-    const joinList = this.info.join;
-
+    const joinList = this.#info.join;
     for (const el of joinList) {
       if (!el.type) {
         el.type = 'FULL JOIN';
@@ -413,7 +394,6 @@ export class Dorm {
       }
     }
     joinList.push({ type: 'FULL JOIN', table: arg });
-
     return this;
   }
   /**
@@ -426,16 +406,12 @@ export class Dorm {
 
   /* -------------------------------- ON METHOD ------------------------------- */
   on(arg: string) {
-    this.callOrder.push('ON');
-
     const validated = validate.onWhere(arg);
-
     if (validated === 'Error') {
-      this.error.id = 12;
+      this.#error.id = 12;
       return this;
     }
-
-    const joinList = this.info.join;
+    const joinList = this.#info.join;
     for (const el of joinList) {
       if (!el.on) {
         el.on = validated;
@@ -443,37 +419,31 @@ export class Dorm {
       }
     }
     joinList.push({ on: validated });
-
     return this;
   }
 
-  /* ------------------------------ WHERE METHOD ------------------------------ */
+  limit(limit: number) {
+    this.#info.limit = limit;
+    return this;
+  }
+
   where(arg: string) {
-    this.callOrder.push('WHERE');
-
     if (this.checkErrors(3)) return this;
-
     const validated = validate.onWhere(arg);
-
     if (validated === 'Error') {
-      this.error.id = 13;
+      this.#error.id = 13;
       return this;
     }
-
-    this.info.filter.where = true;
-    this.info.filter.condition = validated;
-
+    this.#info.filter.where = true;
+    this.#info.filter.condition = validated;
     return this;
   }
 
   /* ---------------------------- RETURNING METHOD ---------------------------- */
   returning(arg?: string) {
-    this.callOrder.push('RETURNING');
-
     if (this.checkErrors(4)) return this;
-
-    this.info.returning.active = true;
-    if (arg) this.info.returning.columns = arg;
+    this.#info.returning.active = true;
+    if (arg) this.#info.returning.columns = arg;
     return this;
   }
 
@@ -483,15 +453,13 @@ export class Dorm {
 
   /* ------------------------------ RESET METHOD ------------------------------ */
   private _reset() {
-    // clear info for future function
-    this.callOrder = [];
-
-    this.error = {
+    // clear #info for future function
+    this.#callOrder = [];
+    this.#error = {
       id: 0,
       message: '',
     };
-
-    this.info = {
+    this.#info = {
       action: {
         type: null,
         table: null,
@@ -514,14 +482,11 @@ export class Dorm {
   /* ------------------------------- THEN METHOD ------------------------------ */
   async then(callback: Callback, fail: Callback = (rej) => rej) {
     this.finalErrorCheck();
-
-    if (this.error.id) {
+    if (this.#error.id) {
       this.setErrorMessage();
-      const { message } = this.error;
+      const { message } = this.#error;
       this._reset();
-
       const cbText = callback.toString();
-
       if (isNative(cbText)) {
         return await callback(Promise.reject(message));
       }
@@ -530,19 +495,16 @@ export class Dorm {
 
     let result: any;
     try {    
-      const params = this.info.action.values;
+      const params = this.#info.action.values;
       result = await query(this.toString(), params);
     } catch (e) {
       this._reset();
-
       const cbText = callback.toString();
-
       if (isNative(cbText)) {
         return await callback(Promise.reject(e));
       }
       return await fail(Promise.reject(e));
     }
-
     try {
       return await callback(result);
     } catch (error) {
@@ -559,20 +521,19 @@ export class Dorm {
   toString() {
     this.finalErrorCheck();
 
-    if (this.error.id) {
+    if (this.#error.id) {
       this.setErrorMessage();
-      const { message } = this.error;
+      const { message } = this.#error;
       this._reset();
       throw message;
     }
 
-    const action = this.info.action.type;
-    const joinList = this.info.join;
-    const filter = this.info.filter.where;
-    const returning = this.info.returning.active;
+    const action = this.#info.action.type;
+    const joinList = this.#info.join;
+    const filter = this.#info.filter.where;
+    const returning = this.#info.returning.active;
 
     let queryTemplate = '';
-
     if (action) queryTemplate = this.template(action);
 
     while (joinList.length) {
@@ -582,36 +543,39 @@ export class Dorm {
 
         const params = validate.insertParams(
           el.on.tokens,
-          this.info.action.values.length + 1
+          this.#info.action.values.length + 1
         );
-        this.info.action.values.push(...el.on.values);
+        this.#info.action.values.push(...el.on.values);
 
         el.on = params.join(' ');
         queryTemplate += this.template('ON');
       } else {
-        this.error.id = 5;
+        this.#error.id = 5;
         this.setErrorMessage();
-        const { message } = this.error;
+        const { message } = this.#error;
         this._reset();
         throw message;
       }
       joinList.shift();
     }
 
-    if (this.info.filter.where) {
-      const whereCondition = this.info.filter.condition;
+    if (this.#info.filter.where) {
+      const whereCondition = this.#info.filter.condition;
       const params = validate.insertParams(
         whereCondition.tokens,
-        this.info.action.values.length + 1
+        this.#info.action.values.length + 1
       );
-      this.info.action.values.push(...whereCondition.values);
-
-      this.info.filter.condition = params.join(' ');
-
+      this.#info.action.values.push(...whereCondition.values);
+      this.#info.filter.condition = params.join(' ');
       queryTemplate += this.template('WHERE');
     }
 
-    if (returning) queryTemplate += this.template('RETURNING');
+    if (this.#info.limit) {
+      queryTemplate += this.template('LIMIT');
+    }
+    if (returning) {
+      queryTemplate += this.template('RETURNING');
+    }
 
     this._reset();
 
@@ -619,7 +583,7 @@ export class Dorm {
   }
 
   toObj() {
-    const values = this.info.action.values;
+    const values = this.#info.action.values;
     const text = this.toString();
     return {
       text,

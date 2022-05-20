@@ -1,6 +1,7 @@
 export { getBaiDuToken, getTencentToken } from './accessToken.ts';
 export { addYqNum } from './array.ts';
 export { Bmob } from './bmob.ts';
+export { checkID } from './checkID.ts';
 export { cron, daily } from './cron.ts';
 export { getStrPinYin } from './pinYin.ts';
 export { RSA } from './RSA.js';  // 这个是JS文件

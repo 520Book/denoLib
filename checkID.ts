@@ -1,8 +1,5 @@
 // 检查身份证号码是否合法，只检查合法性，无法保证正确
-
-export { checkID }
-
-function checkID(code: string) {
+export function checkID(code: string) {
   let date = code.substring(6, 14);
   return checkCode(code) && checkDate(date) && checkProv(code.substring(0, 2)) ? true : false;
 }

@@ -1,11 +1,8 @@
 const validate = {
   onWhere: function (str: string): any {
-    const tokens = this.tokenize(str);
-    
-    if (tokens === 'Error') return tokens;
-    
-    const values: unknown[] = [];
-    
+    const tokens = this.tokenize(str);    
+    if (tokens === 'Error') return tokens;    
+    const values: unknown[] = [];    
     tokens.forEach((token, i) => {
       if (token === 'true') {
         values.push(true);

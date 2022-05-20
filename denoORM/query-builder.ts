@@ -151,19 +151,16 @@ export class Dorm {
       this.#error.id = 11;
       return true;
     }
-
     for (const el of this.#info.join) {
       if (!validate.columnsTables(el.table)) {
         this.#error.id = 98;
         return true;
       }
     }
-
     if (!validate.columnsTables(this.#info.action.table)) {
       this.#error.id = 98;
       return true;
     }
-
     if (
       !validate.columnsTables(this.#info.action.columns) ||
       !validate.columnsTables(this.#info.returning.columns)
@@ -202,14 +199,15 @@ export class Dorm {
         this.#error.id = 8;
         return this;
       }
-      const [column, value] = Object.entries(arg)[0];
-      columns.push(column);
       const val: any = [];
-      if (value === undefined) {
-        val.push(null);
-      } else {
-        val.push(value);
-      }
+      for(let column in arg) {
+        columns.push(column);
+        if (arg[column] === undefined) {
+          val.push(null);
+        } else {
+          val.push(arg[column]);
+        }
+      }     
       values.push(val);
     } else {
       arg.forEach((obj: any) => {
@@ -266,8 +264,6 @@ export class Dorm {
     }
 
     this.#info.action.columns = columns.join(', ');
-
-    // create parameter strings
     this.#info.action.values = values.flat();
     let paramCount = 0;
     const valuesBound = values.map((el: any) =>
@@ -278,10 +274,9 @@ export class Dorm {
     );
 
     valuesBound.forEach((data: any, index: number) => {
-      const tail = index === valuesBound.length - 1 ? '' : ', ';
+      const tail = (index === valuesBound.length - 1) ? '' : ', ';
       this.#info.action.valuesParam += `(${data.join(', ')})${tail}`;
     });
-
     return this;
   }
 

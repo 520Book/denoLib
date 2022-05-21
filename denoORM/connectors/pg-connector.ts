@@ -11,6 +11,7 @@ async function query(str: string, vals?: unknown[]) {
     const client: PoolClient = await pool.connect();
     let dbResult;
     if (vals && vals.length) {
+      console.log(str, vals)
       dbResult = await client.queryObject({ text: str, args: vals });
     } else {
       dbResult = await client.queryObject(str);

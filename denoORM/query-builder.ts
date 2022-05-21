@@ -130,7 +130,6 @@ export class Dorm {
       14: 'No update without where (use updateAll to update all rows)',
       15: 'updateAll cannot have where',
       98: 'Invalid tables (cannot contain quotes)',
-      99: 'Invalid columns (cannot contain quotes)',
     };
     this.#error.message = msg[this.#error.id];
   }
@@ -159,13 +158,6 @@ export class Dorm {
     }
     if (!validate.columnsTables(this.#info.action.table)) {
       this.#error.id = 98;
-      return true;
-    }
-    if (
-      !validate.columnsTables(this.#info.action.columns) ||
-      !validate.columnsTables(this.#info.returning.columns)
-    ) {
-      this.#error.id = 99;
       return true;
     }
 
@@ -220,11 +212,6 @@ export class Dorm {
         });
       });
 
-      if (!validate.columnsTables(columns)) {
-        this.#error.id = 99;
-        return this;
-      }
-
       arg.forEach((obj: any) => {
         const vals: any = [];
         columns.forEach((col) => {
@@ -240,11 +227,6 @@ export class Dorm {
                 if (!columns.includes(col)) columns.push(col);
               });
             });
-
-            if (!validate.columnsTables(columns)) {
-              this.#error.id = 99;
-              return this;
-            }
 
             arg.forEach((obj: any) => {
               const vals: any = [];
@@ -263,7 +245,8 @@ export class Dorm {
       });
     }
 
-    this.#info.action.columns = columns.join(', ');
+    let cStr = JSON.stringify(columns);  // 列名要加上""，防止列名中有大写字母
+    this.#info.action.columns = cStr.substring(1, cStr.length-1);
     this.#info.action.values = values.flat();
     let paramCount = 0;
     const valuesBound = values.map((el: any) =>
@@ -287,10 +270,10 @@ export class Dorm {
       this.#error.id = 8;
       return this;
     }
-    if (!validate.columnsTables(Object.keys(obj))) {
-      this.#error.id = 99;
-      return this;
-    }
+    // if (!validate.columnsTables(Object.keys(obj))) {
+    //   this.#error.id = 99;
+    //   return this;
+    // }
 
     this.#info.action.type = 'UPDATE';
     this.#info.action.columns = '';
